@@ -21,7 +21,7 @@ from .forums import Forums
 class CourseAPI:
 
     URL_BASE        = f'https://coursemology.org'
-    URL_SIGN_IN     = f'{URL_BASE}/users/sign_in'
+    URL_AUTH_CHECK  = f'{URL_BASE}/user/profile/edit'
     URL_FORMAT_JSON = f'?format=json'
 
     def __init__(self, course_id):
@@ -46,9 +46,9 @@ class CourseAPI:
         self.Forums        = Forums(self)
         self.Workbin       = None
         self.Notifications = None
-    
+
     def login(self):
-        response = self.HTTP.get(self.URL_SIGN_IN + self.URL_FORMAT_JSON)
+        response = self.HTTP.get(self.URL_AUTH_CHECK)
         print("Success, you logged in to Coursemology successfully.")
         return self
 

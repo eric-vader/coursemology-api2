@@ -13,6 +13,8 @@ from datetime import datetime, timezone, timedelta
 from getpass import getpass
 from collections.abc import MutableMapping
 
+from .auth import authenticate
+
 from .config import COOKIE_FILENAME, LOGIN_FILENAME
 
 @dataclasses.dataclass
@@ -31,13 +33,13 @@ class WithContext:
     def __exit__(self, exception_type, exception_value, traceback):
         self.current_value = self.old_value
         del self.old_value
-    
+
     def __bool__(self):
         return bool(self.current_value)
-    
+
     def __repr__(self):
         return str(self.current_value)
-    
+
     def __call__(self, new_value=True):
         self.new_value = new_value
         return self
@@ -100,30 +102,29 @@ class Rooted:
 def redirect(request_method):
     def helper(self, *args, **kwargs):
         response = request_method(self, *args, **kwargs)
-        if response.url == self.URL_SIGN_IN + self.URL_FORMAT_JSON:
+        if response.status_code == 401:
             print("=== Coursemology sign-in required ===")
-            formdata = {
-                'user[remember_me]': 1
-            }
             os.makedirs(os.path.dirname(LOGIN_FILENAME), exist_ok=True)
             validLogin = os.path.exists(LOGIN_FILENAME) and kwargs.get('tag') != 'retry_sign_in'
             if validLogin:
                 print('Reading cached login particulars...')
                 try:
                     login_data = json_load(LOGIN_FILENAME)
-                    formdata['user[email]'], formdata['user[password]'] = login_data['username'], login_data['password']
+                    username, password = login_data['username'], login_data['password']
                 except:
                     validLogin = False
             if not validLogin:
                 print('Requesting login particulars...')
-                formdata['user[email]'] = input('username: ')
-                formdata['user[password]'] = getpass('password: ')
+                username = input('username: ')
+                password = getpass('password: ')
                 json_save(LOGIN_FILENAME, {
-                    'username': formdata['user[email]'], 
-                    'password': formdata['user[password]']
+                    'username': username,
+                    'password': password
                 })
             print("Logging in...")
-            response = self.session.post(self.URL_SIGN_IN + self.URL_FORMAT_JSON, data=formdata, headers={'X-Csrf-Token': self.auth_token})
+            token, cookies = authenticate(username, password)
+            for cookie in cookies:
+                self.session.cookies.set(cookie['name'], cookie['value'])
             self.dump_cookies()
             response = request_method(self, *args, **kwargs)
         if response.status_code == 202:
@@ -142,12 +143,12 @@ class HTTP(Rooted):
         self.session = requests.Session()
         self.load_cookies()
         super().__init__(root)
-    
+
     def load_cookies(self):
         if os.path.isfile(self.cookie_path):
             cookie_jar = requests.utils.cookiejar_from_dict(json_load(self.cookie_path))
             self.session.cookies.update(cookie_jar)
-    
+
     def dump_cookies(self):
         # Just in case it's needed, this can be a rather quick lookup
         self.cookie_dict = self.session.cookies.get_dict()
