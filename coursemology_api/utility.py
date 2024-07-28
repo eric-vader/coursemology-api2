@@ -104,7 +104,8 @@ def redirect(request_method):
         response = request_method(self, *args, **kwargs)
         if response.status_code == 401:
             print("=== Coursemology sign-in required ===")
-            os.makedirs(os.path.dirname(LOGIN_FILENAME), exist_ok=True)
+            if os.path.dirname(LOGIN_FILENAME) != '':
+                os.makedirs(os.path.dirname(LOGIN_FILENAME), exist_ok=True)
             validLogin = os.path.exists(LOGIN_FILENAME) and kwargs.get('tag') != 'retry_sign_in'
             if validLogin:
                 print('Reading cached login particulars...')
@@ -122,9 +123,7 @@ def redirect(request_method):
                     'password': password
                 })
             print("Logging in...")
-            token, cookies = authenticate(username, password)
-            for cookie in cookies:
-                self.session.cookies.set(cookie['name'], cookie['value'])
+            self.session = authenticate(username, password, session=self.session)
             self.dump_cookies()
             response = request_method(self, *args, **kwargs)
         if response.status_code == 202:
