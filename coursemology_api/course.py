@@ -44,6 +44,7 @@ class CourseAPI:
         self.Announcements = Announcements(self)
         self.Levels        = Levels(self)
         self.Forums        = Forums(self)
+        self.ExpRecords    = ExpRecords(self)
         self.Workbin       = None
         self.Notifications = None
 

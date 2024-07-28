@@ -123,7 +123,7 @@ def redirect(request_method):
                     'password': password
                 })
             print("Logging in...")
-            self.session = authenticate(username, password, session=self.session)
+            self.session = authenticate(username, password)
             self.dump_cookies()
             response = request_method(self, *args, **kwargs)
         if response.status_code == 202:

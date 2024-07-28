@@ -1,5 +1,6 @@
 from .utility import *
 
+from tqdm_loggable.auto import tqdm
 
 class Users(Rooted):
 
@@ -20,7 +21,9 @@ class Users(Rooted):
         data = self.Staff.info.data + self.Students.info.data
         return Table(headers=headers, data=data)
 
-    def exp_disburse(self, reason_for_disbursement, student_id_exp_pairs=[]):
+    def exp_disburse(self, reason_for_disbursement, student_id_exp_pairs=[], return_report=False):
+        if len(student_id_exp_pairs) == 0:
+            return [] if return_report else None
         formdata = {
             'utf8': '✓',
             'authenticity_token': self.auth_token,
@@ -33,7 +36,47 @@ class Users(Rooted):
             formdata[f'{prefix}[{i}][course_user_id]'] = id_exp[0]
             formdata[f'{prefix}[{i}][points_awarded]'] = id_exp[1]
 
-        return self.HTTP.post(self.URL + '/disburse_experience_points' + self.URL_FORMAT_JSON, data=formdata, allow_redirects=False)
+        response = self.HTTP.post(self.URL + '/disburse_experience_points' + self.URL_FORMAT_JSON, data=formdata, allow_redirects=False)
+        if return_report:
+            return [{'User ID': student_id, 'EXP': exp, 'Method': 'Create', 'OK': response.ok} for student_id, exp in student_id_exp_pairs]
+        return response
+
+    def exp_disburse_override(self, reason_for_disbursement, student_id_exp_pairs=[], progress_bar=False):
+        exp_records_info = self.ExpRecords.get_info(progress_bar=progress_bar)
+        df = exp_records_info.df[exp_records_info.df['Reason'] == reason_for_disbursement]
+
+        student_id_exp_pairs = student_id_exp_pairs
+        student_id_exp_dict = {s:e for s,e in student_id_exp_pairs}
+        student_ids = [s for s,i in student_id_exp_pairs]
+
+        create = list(set(student_ids) - set(df['User ID'].to_list()))
+        create_student_id_exp_pairs = [(s,e) for s,e in student_id_exp_pairs if s in create]
+
+        update_candidate_df = df.loc[df['User ID'].isin(student_ids)]
+        unchanged_df = pd.DataFrame.from_records(
+            [{**item, **{'EXP': student_id_exp_dict[item['User ID']]}}
+             for item in update_candidate_df.to_dict('records') if student_id_exp_dict[item['User ID']] == item['Experience Points Awarded']]
+        )
+        update_df = pd.DataFrame.from_records(
+            [{**item, **{'EXP': student_id_exp_dict[item['User ID']]}}
+             for item in update_candidate_df.to_dict('records') if student_id_exp_dict[item['User ID']] != item['Experience Points Awarded']]
+        )
+        update_student_id_record_exp_pairs = update_df[['User ID', 'Record ID', 'EXP']].values.tolist() if update_df.shape[0] > 0 else []
+
+        create_result = self.exp_disburse(reason_for_disbursement, student_id_exp_pairs=create_student_id_exp_pairs, return_report=True)
+        update_result = self.exp_override(reason_for_disbursement, student_id_record_exp_pairs=update_student_id_record_exp_pairs)
+        unchanged_result = [{'User ID': record['User ID'], 'Record ID': record['Record ID'], 'EXP': record['EXP'], 'Method': 'Unchanged', 'OK': True}
+                            for record in unchanged_df.to_dict('records')]
+
+        return pd.DataFrame.from_records(create_result + update_result + unchanged_result)
+
+    def exp_override(self, reason_for_disbursement, student_id_record_exp_pairs):
+        result = []
+        for student_id, record_id, exp in student_id_record_exp_pairs:
+            record = self.Students(student_id).ExpRecords(record_id)
+            response = record.update(reason=reason_for_disbursement, exp=exp)
+            result.append({'User ID': student_id, 'Record ID': record_id, 'EXP': exp, 'Method': 'Update', 'OK': response.ok})
+        return result
 
     def invite(self, data):
         '''data = [[Name, Email, Role, Is Phantom], ...]'''
@@ -274,12 +317,17 @@ class Staff(Rooted):
 class ExpRecords(Rooted):
 
     URL = 'experience_points_records'
+    check_interval = 3
 
     @property
     @lru_cache(maxsize=1)
     def info(self):
+        return self.get_info()
+
+    def get_info(self, progress_bar=False):
         def get_data():
             i = 1
+            pbar = tqdm(total=1) if progress_bar else None
             data = []
             while True:
                 response = self.HTTP.get(
@@ -287,6 +335,9 @@ class ExpRecords(Rooted):
                 if response.json()['records'] == []:
                     break
                 i += 1
+                response_json = response.json()
+                if pbar is not None:
+                    pbar.update(len(response_json['records'])/response_json['rowCount'])
                 for experiencePointRecord in response.json()['records']:
                     record_id = experiencePointRecord['id']
                     reason = experiencePointRecord['reason']['text']
@@ -295,16 +346,37 @@ class ExpRecords(Rooted):
                         experiencePointRecord['reason']['link'] if is_auto_disburse else ''
                     updater_id = experiencePointRecord['updater']['id']
                     updater_name = experiencePointRecord['updater']['name']
+                    student_id = experiencePointRecord['student']['id']
+                    student_name = experiencePointRecord['student']['name']
                     exp = experiencePointRecord['pointsAwarded']
                     timestamp = experiencePointRecord['updatedAt']
                     data.append([record_id, reason, submission_url,
-                                exp, updater_id, updater_name, timestamp])
+                                exp, updater_id, updater_name, student_id, student_name, timestamp])
+            if pbar is not None:
+                pbar.close()
             return data
         headers = ['Record ID', 'Reason', 'Submission URL', 'Experience Points Awarded',
-                   'Updater ID', 'Updater Name', 'Updated at']
+                   'Updater ID', 'Updater Name', 'User ID', 'User Name', 'Updated at']
 
         data = get_data()
         return Table(headers=headers, data=data)
+
+    @property
+    def info_fast(self):
+        if isinstance(self, User):
+            raise NotImplementedError
+        download_url = self.URL + '/download' + self.URL_FORMAT_JSON
+        print(download_url)
+        response = self.HTTP.get(download_url)
+        while True:
+            response_json = response.json()
+            if response_json['status'] == 'completed':
+                break
+            time.sleep(self.check_interval)
+            response = self.HTTP.get(self.URL_BASE + response_json['jobUrl'] + self.URL_FORMAT_JSON)
+        file_url = response_json['redirectUrl']
+        df = pd.read_csv(file_url)
+        return Table(headers=df.columns.to_list(), data=df.values.tolist())
 
     @guess_id
     @lru_cache(maxsize=None)
