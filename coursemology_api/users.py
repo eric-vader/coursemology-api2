@@ -199,7 +199,6 @@ class Students(Rooted):
     @lru_cache(maxsize=1)
     def stats(self):
         response = self.HTTP.get(self.URL_STATS + self.URL_FORMAT_JSON)
-        print(response)
         assert response.ok, f'Response not OK, status code is {response.status_code}'
 
         assessment_df = self.Assessments.info.df
@@ -366,7 +365,6 @@ class ExpRecords(Rooted):
         if isinstance(self, User):
             raise NotImplementedError
         download_url = self.URL + '/download' + self.URL_FORMAT_JSON
-        print(download_url)
         response = self.HTTP.get(download_url)
         while True:
             response_json = response.json()
