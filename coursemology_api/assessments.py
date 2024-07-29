@@ -255,8 +255,14 @@ class Submissions(Rooted):
     STATUS_UNSTARTED = 'unstarted'
 
     @property
-    @lru_cache(maxsize=1)
     def info(self):
+        if isinstance(self.root, Assessment):
+            return self.info_assessment
+        return self.info_pending
+
+    @property
+    @lru_cache(maxsize=1)
+    def info_assessment(self):
         response = self.HTTP.get(self.URL + self.URL_FORMAT_JSON)
         json_object = json.loads(response.content)
 
@@ -296,6 +302,43 @@ class Submissions(Rooted):
 
             data.append(datum)
         return Table(headers=headers, data=data, meta=meta)
+
+    @property
+    @lru_cache(maxsize=1)
+    def info_pending(self):
+        meta = None
+        records = []
+        i = 1
+        while True:
+            response = self.HTTP.get(self.URL + f'/pending?filter[page_num]={i}&format=json')
+            assert response.ok
+            response_json = response.json()
+            if meta is None:
+                meta = response_json['metaData']
+            if response_json['submissions'] == []:
+                break
+            for submission in response_json['submissions']:
+                submission = defaultdict(lambda: None, submission)
+                record = {
+                    'Submission ID': submission['id'],
+                    'Student Name': submission['courseUserName'],
+                    'Student ID' : submission['courseUserId'],
+                    'Assessment ID' : submission['assessmentId'],
+                    'Assessment Title': submission['assessmentTitle'],
+                    'Submission Status':  submission['status'],
+                    'Grade': submission['maxGrade'],
+                    'Max Grade': submission['maxGrade'],
+                    'Exp': submission['pointsAwarded'],
+                    'Submitted At': submission['submittedAt']
+                }
+                for idx, teaching_staff in enumerate(submission['teachingStaff']):
+                    record[f'Teaching Staff ID {idx+1}'] = teaching_staff['teachingStaffId']
+                    record[f'Teaching Staff Name {idx+1}'] = teaching_staff['teachingStaffName']
+
+                records.append(record)
+            i += 1
+        df = pd.DataFrame.from_records(records)
+        return Table(headers=df.columns.to_list(), data=df.values.tolist(), meta=meta)
 
     @property
     @lru_cache(maxsize=1)
@@ -433,7 +476,7 @@ class Submission(Rooted):
                          for file in assessment['files']]
 
         meta['posts'] = json_object['posts']
-        
+
         headers = ['Submission Question ID', 'Question Name', 'Question ID', 'Question Type',
                    'Answer ID', 'Answer', 'Answer Meta Info', 'Grade', 'Max Grade',
                    'Tests Passed Count', 'Tests Total Count', 'Submission Created At',
@@ -528,10 +571,10 @@ class Submission(Rooted):
                 answer_id, answer, answer_meta_info, grade, max_grade,
                 tests_pass, tests_total, created_at, answer_option_id, answer_correct, test_cases
             ])
-            
+
             response = self.HTTP.get(f'{self.root.root.URL}/submission_questions/{submission_question_id}/past_answers' + self.URL_FORMAT_JSON)
             extra['past_answers'] = json.loads(response.content)
-            
+
             extras.append(extra)
         meta['extras'] = extras
         return Table(headers=headers, data=data, meta=meta)
