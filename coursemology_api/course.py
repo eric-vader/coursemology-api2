@@ -21,14 +21,17 @@ from .forums import Forums
 class CourseAPI:
 
     URL_BASE        = f'https://coursemology.org'
-    URL_AUTH_CHECK  = f'{URL_BASE}/user/profile/edit'
     URL_FORMAT_JSON = f'?format=json'
+    URL_AUTH_CHECK  = f'{URL_BASE}/user/profile/edit{URL_FORMAT_JSON}'
 
-    def __init__(self, course_id):
+    def __init__(self, course_id, login_headless=True, login_wait_time=30):
         self.URL = self.URL_BASE + f'/courses/{course_id}'
 
         self.course_id = course_id
         self.root = self
+
+        self.login_headless = login_headless
+        self.login_wait_time = login_wait_time
 
         self.include_phantoms = WithContext(self, False)
         self.include_all_assessments = WithContext(self, False)
