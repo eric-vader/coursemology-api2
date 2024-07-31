@@ -2,7 +2,7 @@ from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.firefox.options import Options
 import json
 import requests
 
@@ -10,8 +10,9 @@ def get_auth_data(username, password, wait_time=10, headless=True):
     URL = 'https://coursemology.org/user/profile/edit'
     options = Options()
     if headless:
-        options.add_argument('--headless=new')
-    with webdriver.Chrome(options=options) as driver:
+        # options.add_argument('--headless=new')
+        options.headless = True
+    with webdriver.Firefox(options=options) as driver:
         driver.get(URL)
         username_field = WebDriverWait(driver, wait_time).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="email"]')))
         password_field = driver.find_element(By.CSS_SELECTOR, 'input[name="password"]')

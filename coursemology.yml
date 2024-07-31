@@ -1,0 +1,12 @@
+name: coursemology
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - conda-forge::selenium
+  - pip
+  - pip:
+    - requests
+    - pandas
+    - tqdm
+    - tqdm-loggable
