@@ -1,10 +1,10 @@
 from .utility import *
 import io
-import re
 import zipfile
 import json
 import time
-import requests, zipfile, io
+import requests
+import os
 from collections import defaultdict
 
 
@@ -167,9 +167,12 @@ class Assessment(Rooted):
         directory = f"data/{self.course_id}/tests/{str2path(self.info.meta['name'])}" if directory is None else directory
         os.makedirs(directory, exist_ok=True)
         for filename, url in self.info.meta['files']:
-            resp = self.HTTP.get(url)
-            with open(f'{directory}/{filename}', 'w') as f:
-                f.write(resp.text)
+            response = self.HTTP.get(url + self.URL_FORMAT_JSON)
+            assert response.ok, response.status_code
+            download_url = response.json()['url']
+            file_response = self.HTTP.get(download_url)
+            with open(f'{directory}/{filename}', 'wb') as f:
+                f.write(file_response.content)
         return directory
 
     def download_tests(self, directory=None):
@@ -266,7 +269,7 @@ class Submissions(Rooted):
         response = self.HTTP.get(self.URL + self.URL_FORMAT_JSON)
         json_object = json.loads(response.content)
 
-        headers = ['Submission ID', 'Student Name', 'Student ID', 'Student',
+        headers = ['Submission ID', 'User Name', 'User ID', 'Student',
                    'Submission Status', 'Grade', 'Max Grade', 'Exp',
                    'Submitted At', 'Graded At', 'Phantom']
 
@@ -287,8 +290,8 @@ class Submissions(Rooted):
             if not self.include_phantoms and is_phantom:
                 continue  # skip phantoms if not tracking
             submission = defaultdict(lambda: None, submission)
-            student_id = submission['courseUser']['id']
-            student_name = submission['courseUser']['name']
+            user_id = submission['courseUser']['id']
+            user_name = submission['courseUser']['name']
             is_student = submission['courseUser']['isStudent']
             status = submission['workflowState']
             grade = submission['grade']
@@ -297,7 +300,7 @@ class Submissions(Rooted):
             graded_at = submission['dateGraded']
             submission_id = submission['id']
 
-            datum = [submission_id, student_name, student_id, is_student, status,
+            datum = [submission_id, user_name, user_id, is_student, status,
                      grade, meta['max_grade'], exp, submitted_at, graded_at, is_phantom]
 
             data.append(datum)
@@ -321,8 +324,8 @@ class Submissions(Rooted):
                 submission = defaultdict(lambda: None, submission)
                 record = {
                     'Submission ID': submission['id'],
-                    'Student Name': submission['courseUserName'],
-                    'Student ID' : submission['courseUserId'],
+                    'User Name': submission['courseUserName'],
+                    'User ID' : submission['courseUserId'],
                     'Assessment ID' : submission['assessmentId'],
                     'Assessment Title': submission['assessmentTitle'],
                     'Submission Status':  submission['status'],
@@ -572,8 +575,8 @@ class Submission(Rooted):
                 tests_pass, tests_total, created_at, answer_option_id, answer_correct, test_cases
             ])
 
-            response = self.HTTP.get(f'{self.root.root.URL}/submission_questions/{submission_question_id}/past_answers' + self.URL_FORMAT_JSON)
-            extra['past_answers'] = json.loads(response.content)
+            # response = self.HTTP.get(f'{self.root.root.URL}/submission_questions/{submission_question_id}/past_answers' + self.URL_FORMAT_JSON)
+            # extra['past_answers'] = json.loads(response.content)
 
             extras.append(extra)
         meta['extras'] = extras
@@ -656,7 +659,7 @@ class Submission(Rooted):
             raise ValueError("You need to specify some HTML text to comment.")
         question_id = get_question_id(self, question)
         target_url = self.root.root.URL + \
-            f'/submission_questions/{question_id}/comments'
+            f'/submission_questions/{question_id}/comments?format=json'
         headers = {"X-Csrf-Token": self.auth_token}
         payload = {"discussion_post": {"text": text}}
         return self.HTTP.post(target_url, data=None, json=payload, headers=headers, allow_redirects=False)

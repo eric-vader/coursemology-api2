@@ -5,6 +5,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
 import json
 import requests
+import os
 
 def get_auth_data(username, password, wait_time=10, headless=True):
     URL = 'https://coursemology.org/user/profile/edit'
@@ -33,8 +34,15 @@ def get_auth_data(username, password, wait_time=10, headless=True):
             'token': id_token
         }
 
-def authenticate(username, password, wait_time=10, headless=True, session=None):
-    auth_data = get_auth_data(username, password, wait_time=wait_time, headless=headless)
+def authenticate(username, password, wait_time=10, headless=True, session=None, retry_limit=3):
+    for i in range(retry_limit):
+        try:
+            auth_data = get_auth_data(username, password, wait_time=wait_time, headless=headless)
+            break
+        except selenium.common.exceptions.WebDriverException as e:
+            print(e)
+            print('Retrying...')
+            continue
     session = session or requests.Session()
     for cookie in auth_data['cookies']:
         session.cookies.set(cookie['name'], cookie['value'])

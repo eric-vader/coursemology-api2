@@ -91,7 +91,7 @@ class Users(Rooted):
             formdata[f'{prefix}[{i}][name]'] = name
             formdata[f'{prefix}[{i}][email]'] = email
             formdata[f'{prefix}[{i}][role]'] = role
-            formdata[f'{prefix}[{i}][phantom]'] = phantom
+            formdata[f'{prefix}[{i}][phantom]'] = int(phantom)
 
         return self.HTTP.post(self.URL + '/invite' + self.URL_FORMAT_JSON, data=formdata, allow_redirects=False)
 
